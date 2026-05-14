@@ -201,6 +201,13 @@ class PasswordManager:
                                            command=self.change_master_password,
                                            width=15)
         change_password_button.pack(side='right', padx=5)
+
+        # Кнопка сброса данных
+        reset_button = ttk.Button(control_frame, 
+                             text="Сбросить данные", 
+                             command=self.reset_all_data,
+                             width=15)
+        reset_button.pack(side='right', padx=5)
         
         # Кнопки действий
         action_frame = ttk.Frame(main_frame)
@@ -380,18 +387,17 @@ class PasswordManager:
         
         # Проверка на существование данных
         if os.path.exists(self.data_file) or os.path.exists(self.crypto.salt_file):
-            if not messagebox.askyesno("Внимание", 
-                                    "Данные уже существуют. Создать новые?\n"
-                                    "Старые данные будут потеряны!"):
-                return
-            
-            # Удаляем старые файлы
-            for file_path in [self.data_file, self.crypto.salt_file, self.crypto.verification_file]:
-                if os.path.exists(file_path):
-                    try:
-                        os.remove(file_path)
-                    except:
-                        pass
+            messagebox.showerror("Ошибка", 
+                            "Данные уже существуют!\n\n"
+                            "Если вы хотите создать новое хранилище:\n"
+                            "1. Войдите в систему\n"
+                            "2. Перейдите в настройки\n"
+                            "3. Выберите 'Сбросить все данные'\n\n"
+                            "Или удалите файлы вручную:\n"
+                            f"- {self.data_file}\n"
+                            f"- {self.crypto.salt_file}\n"
+                            f"- {self.crypto.verification_file}")
+            return
         
         # Создание нового мастер-ключа через crypto модуль
         self.master_password = master_password
@@ -977,3 +983,93 @@ class PasswordManager:
         
         ttk.Button(frame, text="Выбрать файл", command=select_file).pack(pady=10)
         ttk.Button(frame, text="Отмена", command=dialog.destroy).pack(pady=5)
+
+
+    def reset_all_data(self):
+        """Сброс всех данных (доступно только после входа)"""
+        # Двойное подтверждение для безопасности
+        if not messagebox.askyesno("Подтверждение", 
+                                "Вы уверены, что хотите удалить ВСЕ данные?\n\n"
+                                "Это действие нельзя отменить!"):
+            return
+        
+        # Запрашиваем мастер-пароль для подтверждения
+        password = simpledialog.askstring("Подтверждение", 
+                                        "Введите мастер-пароль для подтверждения:",
+                                        show='●')
+        
+        if password != self.master_password:
+            messagebox.showerror("Ошибка", "Неверный мастер-пароль!")
+            return
+        
+        # Удаляем все файлы данных
+        try:
+            for file_path in [self.data_file, self.crypto.salt_file, self.crypto.verification_file]:
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+            
+            # Очищаем данные в памяти
+            self.passwords = {}
+            self.crypto.fernet = None
+            self.crypto.master_key = None
+            self.crypto.salt = None
+            
+            messagebox.showinfo("Успех", "Все данные удалены. Вы будете перенаправлены на экран входа.")
+            self.show_login_screen()
+            
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Не удалось удалить данные: {str(e)}")
+
+
+def delete_account(self):
+    """Полное удаление аккаунта со всеми данными"""
+    if not messagebox.askyesno("Удаление аккаунта", 
+                              "ВНИМАНИЕ!\n\n"
+                              "Вы собираетесь полностью удалить все данные.\n"
+                              "Это действие НЕОБРАТИМО!\n\n"
+                              "Все сохраненные пароли будут потеряны.\n\n"
+                              "Продолжить?"):
+        return
+    
+    # Тройное подтверждение
+    if not messagebox.askyesno("Подтверждение", 
+                              "Вы ДЕЙСТВИТЕЛЬНО хотите удалить все данные?"):
+        return
+    
+    # Запрашиваем мастер-пароль
+    password = simpledialog.askstring("Подтверждение", 
+                                      "Введите мастер-пароль для окончательного подтверждения:",
+                                      show='●')
+    
+    if password != self.master_password:
+        messagebox.showerror("Ошибка", "Неверный мастер-пароль!")
+        return
+    
+    # Удаляем все данные
+    try:
+        files_to_delete = [
+            self.data_file,
+            self.crypto.salt_file, 
+            self.crypto.verification_file
+        ]
+        
+        deleted_files = []
+        for file_path in files_to_delete:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+                deleted_files.append(file_path)
+        
+        # Очищаем память
+        self.passwords = {}
+        self.crypto.fernet = None
+        self.crypto.master_key = None
+        self.crypto.salt = None
+        self.master_password = None
+        
+        messagebox.showinfo("Успех", 
+                          f"Аккаунт удален.\nУдалено файлов: {len(deleted_files)}\n\n"
+                          "Программа будет закрыта.")
+        self.root.destroy()
+        
+    except Exception as e:
+        messagebox.showerror("Ошибка", f"Не удалось удалить данные: {str(e)}")
