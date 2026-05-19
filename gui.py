@@ -70,6 +70,7 @@ class PasswordManager:
                        foreground=self.colors['tree_fg'],
                        fieldbackground=self.colors['tree_bg'])
         style.map('Treeview',
+                 foreground=[('selected', '#ffffff'), ('!selected', '#ffffff')],
                  background=[('selected', self.colors['tree_selected'])])
         
         style.configure('TEntry', 
@@ -187,40 +188,59 @@ class PasswordManager:
         # Кнопки управления справа
         control_frame = ttk.Frame(top_frame)
         control_frame.pack(side='right')
+        control_frame.columnconfigure(0, weight=1)
+        control_frame.columnconfigure(1, weight=1)
         
-        # Кнопка выхода
-        logout_button = ttk.Button(control_frame, 
-                                   text="Выйти", 
-                                   command=self.logout,
-                                   width=12)
-        logout_button.pack(side='right', padx=(10, 0))
-
-        # Кнопка сброса данных
-        reset_button = ttk.Button(control_frame, 
-                             text="Сбросить данные", 
-                             command=self.reset_all_data,
-                             width=15)
-        reset_button.pack(side='right', padx=5)
+        logout_button = ttk.Button(control_frame, text="Выйти", command=self.logout)
+        logout_button.grid(row=0, column=1, padx=2, sticky='ew')
+        
+        reset_button = ttk.Button(control_frame, text="Сбросить данные", command=self.reset_all_data)
+        reset_button.grid(row=0, column=0, padx=2, sticky='ew')
         
         # Кнопки действий
         action_frame = ttk.Frame(main_frame)
         action_frame.pack(fill='x', pady=(0, 15))
-        
-        # Создание кнопок действий
+
+        # Настроим сетку: 8 колонок с одинаковым весом
+        for i in range(8):
+            action_frame.columnconfigure(i, weight=1, uniform='actions')
+
         actions = [
-            ("➕ Добавить", self.add_password, '#27ae60'),
-            ("📋 Копировать пароль", self.copy_password, '#3498db'),
-            ("👤 Копировать логин", self.copy_username, '#2ecc71'),
-            ("🔗 Копировать URL", self.copy_url, '#9b59b6'),
-            ("✏️ Изменить", self.edit_password, '#f39c12'),
-            ("🗑️ Удалить", self.delete_password, '#e74c3c'),
-            ("📥 Импорт", self.import_passwords, '#2ecc71'), 
-            ("📤 Экспорт", self.export_passwords, '#e67e22')
+            "➕ Добавить",
+            "📋 Копировать пароль",
+            "👤 Копировать логин",
+            "🔗 Копировать URL",
+            "✏️ Изменить",
+            "🗑️ Удалить",
+            "📥 Импорт",
+            "📤 Экспорт"
         ]
-        
-        for text, command, _ in actions:
-            btn = ttk.Button(action_frame, text=text, command=command, width=14)
-            btn.pack(side='left', padx=2)
+    
+        commands = [
+            self.add_password,
+            self.copy_password,
+            self.copy_username,
+            self.copy_url,
+            self.edit_password,
+            self.delete_password,
+            self.import_passwords,
+            self.export_passwords
+        ]
+    
+        for col, (text, cmd) in enumerate(zip(actions, commands)):
+            btn = ttk.Button(action_frame, text=text, command=cmd)
+            btn.grid(row=0, column=col, sticky='ew', padx=2, pady=2)
+            # Задаём минимальную ширину кнопки, чтобы текст не обрезался
+            # Подбираем под самую длинную надпись "📋 Копировать пароль" (около 18 символов)
+            btn.grid_configure(ipadx=5)  # небольшой внутренний отступ
+            # Запрещаем кнопке сжиматься меньше её естественного размера
+            btn.grid_propagate(False)
+            # Устанавливаем минимальную ширину кнопки через minsize (в пикселях)
+            # Можно вычислить примерно: 18 символов * 10 пикселей = 180, плюс иконка
+            btn.update_idletasks()
+            min_width = btn.winfo_reqwidth()
+            btn.configure(width=1)  # сбросим фиксированную ширину, чтобы могла расти
+            btn.grid_configure(minsize=(min_width, 0))
         
         # Поисковая строка
         search_frame = ttk.Frame(main_frame)
@@ -519,22 +539,30 @@ class PasswordManager:
         cancel_button.pack(side='left', padx=5)
     
     def save_new_password(self, entries, dialog):
-        """Сохранение нового пароля"""
-        service = entries['service'].get()
-        username = entries['username'].get()
+        service = entries['service'].get().strip()
+        username = entries['username'].get().strip()
         password = entries['password'].get()
-        url = entries['url'].get()
-        notes = entries['notes'].get()
-        
-        if not service or not username or not password:
-            messagebox.showerror("Ошибка", "Заполните обязательные поля (сервис, логин, пароль)!")
+        url = entries['url'].get().strip()
+        notes = entries['notes'].get().strip()
+    
+        is_valid, error_msg = self.validate_entry(service, username, password, url)
+        if not is_valid:
+            messagebox.showerror("Ошибка валидации", error_msg)
+            if not service:
+                entries['service'].focus_set()
+            elif not username:
+                entries['username'].focus_set()
+            elif not password or len(password) < 4:
+                entries['password'].focus_set()
+            elif url:
+                entries['url'].focus_set()
             return
-        
+    
         if service in self.passwords:
             if not messagebox.askyesno("Предупреждение", 
                                     f"Пароль для {service} уже существует. Обновить?"):
                 return
-        
+    
         # Сохранение данных
         self.passwords[service] = {
             'username': username,
@@ -542,10 +570,10 @@ class PasswordManager:
             'url': url,
             'notes': notes
         }
-        
+    
         # Сортируем словарь по ключам
         self.passwords = dict(sorted(self.passwords.items(), key=lambda x: x[0].lower()))
-        
+    
         self.save_data()
         messagebox.showinfo("Успех", f"Пароль для {service} сохранен!")
         dialog.destroy()
@@ -727,39 +755,47 @@ class PasswordManager:
         button_frame.pack(pady=20)
         
         def save_changes():
-            new_service = entries['service'].get()
-            new_data = {
-                'username': entries['username'].get(),
-                'password': entries['password'].get(),
-                'url': entries['url'].get(),
-                'notes': entries['notes'].get()
-            }
-            
-            if not new_service or not new_data['username'] or not new_data['password']:
-                messagebox.showerror("Ошибка", "Заполните обязательные поля!")
+            new_service = entries['service'].get().strip()
+            new_username = entries['username'].get().strip()
+            new_password = entries['password'].get()
+            new_url = entries['url'].get().strip()
+            new_notes = entries['notes'].get().strip()
+    
+            # Валидация
+            is_valid, error_msg = self.validate_entry(new_service, new_username, new_password, new_url)
+            if not is_valid:
+                messagebox.showerror("Ошибка валидации", error_msg)
+                if not new_service:
+                    entries['service'].focus_set()
+                elif not new_username:
+                    entries['username'].focus_set()
+                elif not new_password or len(new_password) < 4:
+                    entries['password'].focus_set()
+                elif new_url:
+                    entries['url'].focus_set()
                 return
-            
+    
+            new_data = {
+                'username': new_username,
+                'password': new_password,
+                'url': new_url,
+                'notes': new_notes
+            }
+    
             # Удаляем старую запись если изменилось имя сервиса
             if new_service != service:
                 del self.passwords[service]
-            
+    
             self.passwords[new_service] = new_data
-            
+    
             # Сортируем словарь по ключам
             self.passwords = dict(sorted(self.passwords.items(), key=lambda x: x[0].lower()))
-            
+    
             self.save_data()
-            
+    
             messagebox.showinfo("Успех", "Пароль обновлен!")
             dialog.destroy()
             self.refresh_password_list()
-        
-        # Кнопки
-        save_button = ttk.Button(button_frame, text="Сохранить", command=save_changes)
-        save_button.pack(side='left', padx=5)
-        
-        cancel_button = ttk.Button(button_frame, text="Отмена", command=dialog.destroy)
-        cancel_button.pack(side='left', padx=5)
     
     def delete_password(self):
         """Удаление пароля"""
@@ -1087,3 +1123,26 @@ def delete_account(self):
             self.save_data()
             self.refresh_password_list()
             messagebox.showinfo("Успех", "Пароли отсортированы по алфавиту")
+
+    def validate_entry(self, service, username, password, url=''):
+    if not service or not service.strip():
+        return False, "Поле 'Сервис' не может быть пустым"
+    
+    if not username or not username.strip():
+        return False, "Поле 'Логин' не может быть пустым"
+    
+    if not password:
+        return False, "Поле 'Пароль' не может быть пустым"
+    if len(password) < 4:
+        return False, "Пароль должен содержать минимум 4 символа"
+    
+    if url and url.strip():
+        url = url.strip()
+        if not url.startswith(('http://', 'https://')):
+            return False, "URL должен начинаться с http:// или https://"
+        if '://' in url:
+            domain_part = url.split('://')[1].split('/')[0]
+            if '.' not in domain_part:
+                return False, "Некорректный URL: отсутствует домен"
+    
+    return True, ""
